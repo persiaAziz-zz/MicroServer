@@ -10,7 +10,7 @@ import os
 import threading
 from ipaddress import ip_address
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn, ForkingMixIn, BaseServer
+from socketserver import ThreadingMixIn, BaseServer
 from http import HTTPStatus
 import argparse
 import ssl
@@ -32,17 +32,12 @@ sys.path.append(
 import sessionvalidation.sessionvalidation as sv
 
 
-SERVER_PORT = 5005 # default port
+SERVER_PORT = 8080 # default port
 HTTP_VERSION = 'HTTP/1.1'
-G_replay_dict = {}
 
 count = 0
 class ThreadingServer(ThreadingMixIn, HTTPServer):
     '''This class forces the creation of a new thread on each connection'''
-    pass
-
-class ForkingServer(ForkingMixIn, HTTPServer):
-    '''This class forces the creation of a new process on each connection'''
     pass
 
 class SSLServer(ThreadingMixIn, HTTPServer):
@@ -69,42 +64,7 @@ class SSLServer(ThreadingMixIn, HTTPServer):
 class MyHandler(BaseHTTPRequestHandler):
     def handleExpect100Continue(self,contentLength,chunked=False):
         print("....expect",contentLength)
-        self.wfile.write(bytes('HTTP/1.1 100 Continue\r\n\r\n','UTF-8'))
-        #self.send_response(HTTPStatus.CONTINUE)
-        #self.send_header('Server','blablabla')
-        #self.send_header('Connection', 'keep-alive')
-        #self.end_headers()
-        if(not chunked):
-            message = self.rfile.read(contentLength)
-        else:
-            readChunks()
 
-    def getTestName(self,requestline):
-        key=None
-        keys=requestline.split(" ")
-        #print(keys)
-        if keys:
-            rkey=keys[1]
-        key=rkey.split("/",1)[1]
-        if key+"/" in G_replay_dict:
-            key = key+"/"
-        elif len(key) > 1 and key[:-1] in G_replay_dict:
-            key = key[:-1]
-        return key
-
-    def parseRequestline(self,requestline):
-        testName=None        
-        return testName
-
-    def testMode(self,requestline):
-        print(requestline)
-        key=self.parseRequestline(requestline)
-        
-        self.send_response(200)
-        self.send_header('Connection', 'close')
-        self.end_headers()
-
-        
     def get_response_code(self, header):
         # this could totally go wrong
         return int(header.split(' ')[1])
@@ -195,7 +155,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 bodysize = int(self.headers.get('Content-Length'))
                 #print("length of the body is",bodysize)
                 message = self.rfile.read(bodysize)
-                #print("message body",message)
+                print("message body",message)
             elif self.headers.get('Transfer-Encoding',"") == 'chunked':
                 #print(self.headers)
                 self.readChunks()
@@ -255,7 +215,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 return False
         elif not words:
             count += 1
-            print("bla bla on 157 {0} => {1}".format(count,self.close_connection))
+            print("bla bla {0} => {1}".format(count,self.close_connection))
             return False
         else:
             self.send_error(
@@ -274,209 +234,14 @@ class MyHandler(BaseHTTPRequestHandler):
         
         return True
 
-    def do_GET(self):
-        global G_replay_dict, test_mode_enabled
-        if test_mode_enabled:
-            request_hash = self.getTestName(self.requestline)
-        else:
-            request_hash, __ = cgi.parse_header(self.headers.get('Content-MD5'))
-        #print("key:",request_hash)
-        try:
-            response_string=None
-            chunkedResponse= False
-            if request_hash not in G_replay_dict:
-                self.send_response(404)
-                self.send_header('Server','MicroServer')
-                self.send_header('Connection', 'close')
-                self.end_headers()
+def do_GET(self):  
+    # set status codes
+    status_code = 200
+    self.send_response(status_code)
+    self.wfile.write(bytes("What the hell do you want?", 'UTF-8'))
+    return       
+ 
 
-            else:
-                resp = G_replay_dict[request_hash]
-                headers = resp.getHeaders().split('\r\n')
-
-                # set status codes
-                status_code = self.get_response_code(headers[0])
-                self.send_response(status_code)
-
-                # set headers
-                for header in headers[1:]: # skip first one b/c it's response code
-                    if header == '':
-                        continue
-                    elif 'Content-Length' in header:
-                        if 'Access-Control' in header: # skipping Access-Control-Allow-Credentials, Access-Control-Allow-Origin, Content-Length
-                            header_parts = header.split(':', 1)
-                            header_field = str(header_parts[0].strip())
-                            header_field_val = str(header_parts[1].strip())
-                            self.send_header(header_field, header_field_val)
-                            continue
-                        lengthSTR = header.split(':')[1]
-                        length = lengthSTR.strip(' ')
-                        if test_mode_enabled: # the length of the body is given priority in test mode rather than the value in Content-Length. But in replay mode Content-Length gets the priority
-                            if not (resp and resp.getBody()): # Don't attach content-length yet if body is present in the response specified by tester
-                                self.send_header('Content-Length', str(length))
-                        else:
-                            self.send_header('Content-Length', str(length))
-                        response_string = self.createDummyBodywithLength(int(length))
-                        continue
-                    if 'Transfer-Encoding' in header:
-                        self.send_header('Transfer-Encoding','Chunked')
-                        response_string='%X\r\n%s\r\n'%(len('ats'),'ats')
-                        chunkedResponse= True                    
-                        continue
-            
-                    header_parts = header.split(':', 1)
-                    header_field = str(header_parts[0].strip())
-                    header_field_val = str(header_parts[1].strip())
-                    #print("{0} === >{1}".format(header_field, header_field_val))
-                    self.send_header(header_field, header_field_val)
-                #End for
-                if test_mode_enabled:
-                    if resp and resp.getBody():
-                        length = len(bytes(resp.getBody(),'UTF-8'))
-                        response_string=resp.getBody()
-                        self.send_header('Content-Length', str(length))
-                self.end_headers()
-                
-                
-                if (chunkedResponse):
-                    self.writeChunkedData()
-                elif response_string!=None and response_string!='':
-                    self.wfile.write(bytes(response_string, 'UTF-8'))
-            return
-        except:
-            e=sys.exc_info()
-            print("Error",e,self.headers)
-            self.send_response(400)
-            self.send_header('Connection', 'close')
-            self.end_headers()
-       
-
-        
-    def do_HEAD(self):
-        global G_replay_dict, test_mode_enabled
-        if test_mode_enabled:
-            request_hash = self.getTestName(self.requestline)
-        else:
-            request_hash, __ = cgi.parse_header(self.headers.get('Content-MD5'))
-        
-        if request_hash not in G_replay_dict:
-            self.send_response(404)
-            self.send_header('Connection', 'close')
-            self.end_headers()
-
-        else:
-            resp = G_replay_dict[request_hash]
-            headers = resp.getHeaders().split('\r\n')
-
-            # set status codes
-            status_code = self.get_response_code(headers[0])
-            self.send_response(status_code)
-
-            # set headers
-            for header in headers[1:]: # skip first one b/c it's response code
-                if header == '':
-                    continue
-                elif 'Content-Length' in header:
-                    self.send_header('Content-Length', '0')
-                    continue
-        
-                header_parts = header.split(':', 1)
-                header_field = str(header_parts[0].strip())
-                header_field_val = str(header_parts[1].strip())
-                #print("{0} === >{1}".format(header_field, header_field_val))
-                self.send_header(header_field, header_field_val)
-
-            self.end_headers()
-
-    def do_POST(self):
-        response_string=None
-        chunkedResponse= False
-        global G_replay_dict, test_mode_enabled
-        if test_mode_enabled:
-            request_hash = self.getTestName(self.requestline)
-        else:
-            request_hash, __ = cgi.parse_header(self.headers.get('Content-MD5'))
-        try:
-           
-            if request_hash not in G_replay_dict:
-                self.send_response(404)
-                self.send_header('Connection', 'close')
-                self.end_headers()
-                resp = None
-            else:
-                resp = G_replay_dict[request_hash]
-                resp_headers = resp.getHeaders().split('\r\n')
-                # set status codes
-                status_code = self.get_response_code(resp_headers[0])
-                #print("response code",status_code)
-                self.send_response(status_code)
-                #print("reposen is ",resp_headers)
-                # set headers
-                for header in resp_headers[1:]: # skip first one b/c it's response code
-                    
-                    if header == '':
-                        continue
-                    elif 'Content-Length' in header:
-                        if 'Access-Control' in header: # skipping Access-Control-Allow-Credentials, Access-Control-Allow-Origin, Content-Length
-                            header_parts = header.split(':', 1)
-                            header_field = str(header_parts[0].strip())
-                            header_field_val = str(header_parts[1].strip())
-                            self.send_header(header_field, header_field_val)
-                            continue
-                        
-                        lengthSTR = header.split(':')[1]
-                        length = lengthSTR.strip(' ')
-                        if test_mode_enabled: # the length of the body is given priority in test mode rather than the value in Content-Length. But in replay mode Content-Length gets the priority
-                            if not (resp and resp.getBody()): # Don't attach content-length yet if body is present in the response specified by tester
-                                self.send_header('Content-Length', str(length))
-                        else:
-                            self.send_header('Content-Length', str(length))
-                        response_string = self.createDummyBodywithLength(int(length))
-                        continue
-                    if 'Transfer-Encoding' in header:
-                        self.send_header('Transfer-Encoding','Chunked')
-                        response_string='%X\r\n%s\r\n'%(len('microserver'),'microserver')
-                        chunkedResponse= True                    
-                        continue
-                    
-                    header_parts = header.split(':', 1)
-                    header_field = str(header_parts[0].strip())
-                    header_field_val = str(header_parts[1].strip())
-                    #print("{0} === >{1}".format(header_field, header_field_val))
-                    self.send_header(header_field, header_field_val)
-                # End for loop
-                if test_mode_enabled:
-                    if resp and resp.getBody():
-                        length = len(bytes(resp.getBody(),'UTF-8'))
-                        response_string=resp.getBody()
-                        self.send_header('Content-Length', str(length))    
-                self.end_headers()
-            
-            if (chunkedResponse):
-                self.writeChunkedData()
-            elif response_string!=None and response_string!='':
-                self.wfile.write(bytes(response_string, 'UTF-8'))
-            return
-        except:
-            e=sys.exc_info()
-            print("Error",e,self.headers)
-            self.send_response(400)
-            self.send_header('Connection', 'close')
-            self.end_headers()
-
-def populate_global_replay_dictionary(sessions):
-    ''' Populates the global dictionary of {uuid (string): reponse (Response object)} '''
-    global G_replay_dict
-    for session in sessions:
-        for txn in session.getTransactionIter():
-            G_replay_dict[txn._uuid] = txn.getResponse()
-    
-    print("size",len(G_replay_dict))
-    
-#tests will add responses to the dictionary where key is the testname
-def addResponseHeader(key,response_header):
-    G_replay_dict[key] = response_header
-    
 def _path(exists, arg ):
     path = os.path.abspath(arg)
     if not os.path.exists(path) and exists:
@@ -508,12 +273,6 @@ def main():
                         type=lambda x: _path(True,x),
                         required=True,
                         help="Directory with data file"
-                        )
-
-    parser.add_argument("--public","-P", 
-                        type=_bool, 
-                        default=False,                        
-                        help="Bind server to public IP 0.0.0.0 vs private IP of 127.0.0.1"
                         )
 
     parser.add_argument("--ip_address","-ip", 
@@ -557,14 +316,9 @@ def main():
 
     args=parser.parse_args()
     options = args
-    # set up global dictionary of {uuid (string): response (Response object)}
-    s = sv.SessionValidator(args.data_dir)
-    populate_global_replay_dictionary(s.getSessionIter())
-    print("Dropped {0} sessions for being malformed".format(len(s.getBadSessionList())))
     
     # start server
     try:
-        socket_timeout = args.timeout
         test_mode_enabled = args.mode=="test"
         
         MyHandler.protocol_version = HTTP_VERSION        
