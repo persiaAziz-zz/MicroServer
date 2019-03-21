@@ -11,7 +11,6 @@ import threading
 from ipaddress import ip_address
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn, BaseServer
-from http import HTTPStatus
 import argparse
 import ssl
 import socket
@@ -161,12 +160,12 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.readChunks()
         except http.client.LineTooLong:
             self.send_error(
-                HTTPStatus.BAD_REQUEST,
+                400,
                 "Line too long")
             return False
         except http.client.HTTPException as err:
             self.send_error(
-                HTTPStatus.REQUEST_HEADER_FIELDS_TOO_LARGE,
+                431,
                 "Too many headers",
                 str(err)
             )
@@ -178,7 +177,7 @@ class MyHandler(BaseHTTPRequestHandler):
             command, path, version = words
             if version[:5] != 'HTTP/':
                 self.send_error(
-                    HTTPStatus.BAD_REQUEST,
+                    400,
                     "Bad request version (%r)" % version)
                 return False
             try:
@@ -195,14 +194,14 @@ class MyHandler(BaseHTTPRequestHandler):
                 version_number = int(version_number[0]), int(version_number[1])
             except (ValueError, IndexError):
                 self.send_error(
-                    HTTPStatus.BAD_REQUEST,
+                    400,
                     "Bad request version (%r)" % version)
                 return False
             if version_number >= (1, 1) and self.protocol_version >= "HTTP/1.1":
                 self.close_connection = False
             if version_number >= (2, 0):
                 self.send_error(
-                    HTTPStatus.HTTP_VERSION_NOT_SUPPORTED,
+                    505,
                     "Invalid HTTP Version (%s)" % base_version_number)
                 return False
         elif len(words) == 2:
@@ -210,7 +209,7 @@ class MyHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             if command != 'GET':
                 self.send_error(
-                    HTTPStatus.BAD_REQUEST,
+                    400,
                     "Bad HTTP/0.9 request type (%r)" % command)
                 return False
         elif not words:
@@ -219,7 +218,7 @@ class MyHandler(BaseHTTPRequestHandler):
             return False
         else:
             self.send_error(
-                HTTPStatus.BAD_REQUEST,
+                400,
                 "Bad request syntax (%r)" % requestline)
             return False
         self.command, self.path, self.request_version = command, path, version
