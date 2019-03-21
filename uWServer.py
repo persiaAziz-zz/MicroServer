@@ -268,12 +268,6 @@ def main():
     global test_mode_enabled
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data-dir","-d",
-                        type=lambda x: _path(True,x),
-                        required=True,
-                        help="Directory with data file"
-                        )
-
     parser.add_argument("--ip_address","-ip", 
                         type=str, 
                         default='',                        
@@ -290,12 +284,7 @@ def main():
                         default=None,                        
                         help="socket time out in seconds")                        
 
-    parser.add_argument('-V','--version', action='version', version='%(prog)s {0}'.format(__version__))
 
-    parser.add_argument("--mode","-m",
-                        type=str,
-                        default="test",                        
-                        help="Mode of operation")
     parser.add_argument("--connection","-c",
                         type=str,
                         default="nonSSL",                        
@@ -318,7 +307,6 @@ def main():
     
     # start server
     try:
-        test_mode_enabled = args.mode=="test"
         
         MyHandler.protocol_version = HTTP_VERSION        
         if options.connection == 'ssl':
